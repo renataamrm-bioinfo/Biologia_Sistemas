@@ -97,18 +97,78 @@ for (i in 1:nrow(mat)) {
 }
 
 # ==============================================================================
-# 3. CONFIGURAÇÃO DO MAPEAMENTO DINÂMICO DE GRUPOS (Nomes Reais em Português)
+# 3. CONFIGURAÇÃO DO MAPEAMENTO DINÂMICO DE GRUPOS (Automático e Inteligente)
 # ==============================================================================
+message("🤖 Mapeando tipos celulares de forma automatizada para PT e RT...")
+
 cluster_names <- levels(cellchat@idents)
-group_mapping <- case_when(
-  cluster_names == "Células Cancerígenas" ~ "Tumor",
-  cluster_names == "Células Epiteliais"   ~ "Epitelial",
-  cluster_names == "Células Endoteliais"  ~ "Endotelial",
-  cluster_names == "Células Mielóides"    ~ "Mielóide",
-  TRUE                                    ~ "Outro"
-)
+
+# Cria um vetor vazio para armazenar o mapeamento
+group_mapping <- character(length(cluster_names))
+
+for (i in seq_along(cluster_names)) {
+  name <- cluster_names[i]
+  
+  group_mapping[i] <- case_when(
+    # 1. Células Cancerígenas / Tumorais
+    grepl("cancer|tumor|malign", name, ignore.case = TRUE) ~ "Tumor",
+    
+    # 2. Células Epiteliais Gerais
+    grepl("epitelial|epiteliais|epithelial", name, ignore.case = TRUE) ~ "Epitelial",
+    
+    # 3. Células Luminais (comum em mama/próstata, frequentemente epiteliais)
+    grepl("luminal|luminais", name, ignore.case = TRUE) ~ "Luminal",
+    
+    # 4. Células Basais
+    grepl("basal|basais", name, ignore.case = TRUE) ~ "Basal",
+    
+    # 5. Células Endoteliais
+    grepl("endotelial|endoteliais|endothelial", name, ignore.case = TRUE) ~ "Endotelial",
+    
+    # 6. Células Mielóides
+    grepl("miel[oó]ide|miel[oó]ides|myeloid", name, ignore.case = TRUE) ~ "Mielóide",
+    
+    # 7. Células NK / Linfoides
+    grepl("nk|linf[oó]cito|t_cell|b_cell|lymphoid", name, ignore.case = TRUE) ~ "Linfoide",
+    
+    # Caso apareça algum cluster totalmente novo no futuro
+    TRUE ~ "Outro"
+  )
+}
+
 group.cellType <- group_mapping
 names(group.cellType) <- cluster_names
+
+# Exibe no console a tabela de conferência para o PREFIX atual
+message(paste("📋 Tabela de Mapeamento para o dataset:", PREFIX))
+print(data.frame(Original = cluster_names, Mapeado = group.cellType, row.names = NULL))
+
+
+# ==============================================================================
+# [EXTRA] GRÁFICO DE BOLHAS GLOBAL (TODAS AS VIAS JUNTAS)
+# ==============================================================================
+message("🔮 Gerando Gráfico de Bolhas Global para triagem de vias no artigo...")
+
+tryCatch({
+  png(filename = file.path(output_base_dir, "Systems_Role_Analysis", paste0(PREFIX, "_Global_Bubble_All_Pathways.png")), 
+      width = 1600, height = 2000, res = 130) # Altura maior para acomodar todas as vias
+  
+  p_global_bubble <- netVisual_bubble(
+    cellchat, 
+    sources.use = vertex.receiver, 
+    targets.use = vertex.receiver, 
+    signaling = all_pathways, 
+    remove.isolate = FALSE
+  ) + 
+    ggtitle(paste("Visão Geral de Todas as Vias de Sinalização -", PREFIX)) +
+    theme(axis.text.y = element_text(size = 8)) # Ajusta o tamanho da fonte para não sobrepor
+  
+  print(p_global_bubble)
+  dev.off()
+}, error = function(e) {
+  if (dev.cur() > 1) dev.off()
+  registrar_log(paste0("ERRO ao gerar o Bubble Plot Global: ", e$message))
+})
 
 # ==============================================================================
 # 4. LOOP MESTRE DE VIAS (Geração simultânea de todas as camadas visuais)
